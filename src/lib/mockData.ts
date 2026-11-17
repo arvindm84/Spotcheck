@@ -1,4 +1,4 @@
-import type { Location, VibeTag } from '../types/location'
+import type { Location, SpotEvent, VibeTag } from '../types/location'
 
 export const mockVibeTags: VibeTag[] = [
   { id: 'silent-study', slug: 'silent-study', label: 'Silent Study' },
@@ -1339,3 +1339,37 @@ export const mockLocations: Location[] = [
     lastUpdated: new Date(Date.now() - 190 * 60 * 1000).toISOString(),
   },
 ]
+
+// Sample events for the Events screen: three a day for the coming week, at campus buildings.
+const SAMPLE_EVENTS: { hour: number; minute: number; title: string; venue: string; locationId: string; freeFood: boolean }[] = [
+  { hour: 19, minute: 0, title: 'Open mic night', venue: 'Memorial Union', locationId: 'memorial-union', freeFood: false },
+  { hour: 20, minute: 30, title: 'Student org mixer', venue: 'Union South', locationId: 'union-south', freeFood: true },
+  { hour: 21, minute: 0, title: 'Late-night study break', venue: 'College Library', locationId: 'college-library', freeFood: true },
+  { hour: 18, minute: 0, title: 'Board game social', venue: 'Student Activity Center', locationId: 'student-activity-center', freeFood: false },
+  { hour: 19, minute: 30, title: 'Film screening', venue: 'Union South', locationId: 'union-south', freeFood: false },
+  { hour: 20, minute: 0, title: 'Research showcase', venue: 'Wisconsin Institute for Discovery', locationId: 'wid', freeFood: true },
+  { hour: 17, minute: 30, title: 'Design club workshop', venue: 'School of Human Ecology', locationId: 'sohe', freeFood: false },
+  { hour: 19, minute: 0, title: 'Trivia night', venue: 'Memorial Union', locationId: 'memorial-union', freeFood: false },
+  { hour: 21, minute: 30, title: 'Group study jam', venue: 'Wendt Commons', locationId: 'wendt-commons', freeFood: true },
+]
+
+export function mockEvents(): SpotEvent[] {
+  const events: SpotEvent[] = []
+  for (let day = 0; day < 7; day++) {
+    for (let slot = 0; slot < 3; slot++) {
+      const sample = SAMPLE_EVENTS[(day * 3 + slot) % SAMPLE_EVENTS.length]
+      const startsAt = new Date()
+      startsAt.setDate(startsAt.getDate() + day)
+      startsAt.setHours(sample.hour, sample.minute, 0, 0)
+      events.push({
+        id: `sample-${startsAt.toDateString()}-${slot}`,
+        title: sample.title,
+        venue: sample.venue,
+        locationId: sample.locationId,
+        startsAt: startsAt.toISOString(),
+        freeFood: sample.freeFood,
+      })
+    }
+  }
+  return events.sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+}

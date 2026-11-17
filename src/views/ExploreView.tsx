@@ -1,29 +1,63 @@
-import { useEffect, useRef, useState } from 'react'
-import { Map, Marker, type MapRef } from 'react-map-gl/mapbox'
-import { MapPin } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Map as MapboxMap, Marker, type MapRef } from 'react-map-gl/mapbox'
+import { MapPin, Search, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { BottomSheet } from '../components/BottomSheet'
-import { FilterBar } from '../components/FilterBar'
-import { LocationCard } from '../components/LocationCard'
-import { LocationListItem } from '../components/LocationListItem'
-import { LocationPin } from '../components/LocationPin'
-import { SearchBar } from '../components/SearchBar'
-import { getLocations, getVibeTags } from '../lib/data'
-import { getSnapHeights, type SheetSnap } from '../lib/sheetSnaps'
+import { CrowdBars } from '../components/CrowdBars'
+import { useApp } from '../lib/appContext'
 import {
-  categoryFilters,
-  filterSpots,
-  sortByLeastBusy,
-  type CategoryFilterId,
-} from '../lib/spotFilters'
+  agoLabel,
+  crowdColor,
+  crowdInk,
+  crowdLabel,
+  openSeatsLabel,
+  getCrowdLevel,
+  hasOutlets,
+  outletSummary,
+  shortName,
+} from '../lib/crowd'
+import { getFreshnessLevel } from '../lib/freshness'
+import { distanceMeters, walkMinutes } from '../lib/geo'
+import { getIntent, sortForIntent } from '../lib/intent'
+import { getSnapHeights, type SheetSnap } from '../lib/sheetSnaps'
+import { filterSpots } from '../lib/spotFilters'
 import { usePlaceSearch, type PlaceResult } from '../lib/usePlaceSearch'
-import type { Location, VibeTag } from '../types/location'
+import type { Location } from '../types/location'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
-// Keeps a flown-to point clear of the search bar and filter chips.
-const MAP_TOP_PADDING = 120
-const DEFAULT_CATEGORY: CategoryFilterId = 'all'
+// Keeps map content clear of the search bar and filter chips.
+const MAP_TOP_PADDING = 150
+// The best matches get a name label on the map; the rest are dots.
+const LABELLED_PINS = 3
+// Labelled pins closer together than this would overlap, so the lower-ranked one stays a dot.
+const LABEL_SPACING_M = 260
+// How many of the best matches the map frames.
+const FRAMED_SPOTS = 6
+const STALE_COLOR = '#B8C3C9'
 
-// Frames every given spot in the part of the map the sheet leaves visible.
+type FilterId = 'seats' | 'outlets' | 'open'
+const filterChips: { id: FilterId; label: string }[] = [
+  { id: 'seats', label: 'Seats open' },
+  { id: 'outlets', label: 'Outlets' },
+  { id: 'open', label: 'Open now' },
+]
+
+// Recolors Mapbox's light style to the brand map: pale-blue water, grey land, white roads.
+function applyBrandColors(map: MapRef) {
+  const m = map.getMap()
+  for (const layer of m.getStyle().layers ?? []) {
+    try {
+      if (layer.type === 'background') m.setPaintProperty(layer.id, 'background-color', '#E9EEF1')
+      else if (layer.type === 'fill' && layer.id.includes('water')) m.setPaintProperty(layer.id, 'fill-color', '#D2EAF2')
+      else if (layer.type === 'fill' && layer.id.includes('building')) m.setPaintProperty(layer.id, 'fill-color', '#DCE2E6')
+      else if (layer.type === 'fill' && /^land|landuse|national-park/.test(layer.id)) m.setPaintProperty(layer.id, 'fill-color', '#E9EEF1')
+      else if (layer.type === 'line' && /road|bridge|tunnel/.test(layer.id)) m.setPaintProperty(layer.id, 'line-color', '#FFFFFF')
+    } catch {
+      // A layer that can't take the color keeps Mapbox's default.
+    }
+  }
+}
+
 function fitToSpots(map: MapRef | null, spots: Location[], snap: SheetSnap, animate = true) {
   if (!map || spots.length === 0) return
   const lngs = spots.map((spot) => spot.lng)
@@ -34,135 +68,182 @@ function fitToSpots(map: MapRef | null, spots: Location[], snap: SheetSnap, anim
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)],
     ],
-    { padding: { top: MAP_TOP_PADDING + 16, bottom, left: 40, right: 40 }, maxZoom: 16, animate },
+    { padding: { top: MAP_TOP_PADDING, bottom, left: 96, right: 96 }, maxZoom: 16, animate },
   )
 }
 
 export function ExploreView() {
-  const [locations, setLocations] = useState<Location[]>([])
-  const [vibeTags, setVibeTags] = useState<VibeTag[]>([])
+  const { locations, intent: intentId, userLocation, now } = useApp()
+  const intent = getIntent(intentId ?? 'focus')
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
-  const [categoryId, setCategoryId] = useState<CategoryFilterId>(DEFAULT_CATEGORY)
-  const [vibeSlugs, setVibeSlugs] = useState<string[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [filters, setFilters] = useState<FilterId[]>([])
   const [snap, setSnap] = useState<SheetSnap>('peek')
+  const [mapLoaded, setMapLoaded] = useState(false)
   const mapRef = useRef<MapRef>(null)
   const placeResults = usePlaceSearch(query)
+  const trimmedQuery = query.trim()
 
+  const results = useMemo(() => {
+    const matches = filterSpots(locations, {
+      query,
+      categoryId: 'all',
+      vibeSlugs: [],
+      openNow: filters.includes('open'),
+    }).filter((spot) => {
+      // A search looks across every kind of spot.
+      if (!query.trim() && intent.categories && !intent.categories.includes(spot.category)) return false
+      if (filters.includes('outlets') && !hasOutlets(spot)) return false
+      if (filters.includes('seats')) {
+        return spot.busyScore <= 5 && getFreshnessLevel(spot.lastUpdated, now) !== 'stale'
+      }
+      return true
+    })
+    return sortForIntent(matches, intent.id, userLocation)
+  }, [locations, query, filters, intent, userLocation, now])
+
+  // Frame the best matches whenever what's being asked for changes (not on every data refresh).
+  const framedKey = `${mapLoaded}|${locations.length > 0}|${intent.id}|${filters.join()}|${trimmedQuery}`
+  const resultsRef = useRef(results)
+  const snapRef = useRef(snap)
   useEffect(() => {
-    getLocations().then((data) => {
-      setLocations(data)
-      const initialSpots = filterSpots(data, { query: '', categoryId: DEFAULT_CATEGORY, vibeSlugs: [] })
-      fitToSpots(mapRef.current, initialSpots, 'peek', false)
-    })
-    getVibeTags().then(setVibeTags)
-  }, [])
+    resultsRef.current = results
+    snapRef.current = snap
+  })
+  useEffect(() => {
+    fitToSpots(mapRef.current, resultsRef.current.slice(0, FRAMED_SPOTS), snapRef.current)
+  }, [framedKey])
 
-  const results = sortByLeastBusy(filterSpots(locations, { query, categoryId, vibeSlugs }))
-  const selectedLocation = locations.find((location) => location.id === selectedId) ?? null
-  // The selected spot keeps its pin even if a filter change would hide it.
-  const pinnedLocations =
-    selectedLocation && !results.includes(selectedLocation) ? [...results, selectedLocation] : results
-  const categoryLabel = categoryFilters.find((filter) => filter.id === categoryId)?.label ?? 'All'
-
-  const flyTo = (lat: number, lng: number) => {
-    const map = mapRef.current
-    if (!map) return
-    const bottom = getSnapHeights(map.getContainer().clientHeight).half
-    map.flyTo({
-      center: [lng, lat],
-      zoom: Math.max(map.getZoom(), 16),
-      padding: { top: MAP_TOP_PADDING, bottom, left: 0, right: 0 },
-    })
-  }
-
-  const changeCategory = (id: CategoryFilterId) => {
-    setCategoryId(id)
-    setSelectedId(null)
-    fitToSpots(mapRef.current, filterSpots(locations, { query, categoryId: id, vibeSlugs }), snap)
-  }
-
-  const selectLocation = (location: Location) => {
-    setSelectedId(location.id)
-    setSnap('half')
-    flyTo(location.lat, location.lng)
-  }
+  const openSpot = useCallback((spot: Location) => navigate(`/spot/${spot.id}`), [navigate])
 
   const selectPlace = (place: PlaceResult) => {
     setQuery('')
-    setSelectedId(null)
     setSnap('peek')
-    flyTo(place.lat, place.lng)
+    mapRef.current?.flyTo({ center: [place.lng, place.lat], zoom: 16 })
   }
 
-  const toggleVibe = (slug: string) => {
-    const next = vibeSlugs.includes(slug)
-      ? vibeSlugs.filter((s) => s !== slug)
-      : [...vibeSlugs, slug]
-    setVibeSlugs(next)
-    fitToSpots(mapRef.current, filterSpots(locations, { query, categoryId, vibeSlugs: next }), snap)
-  }
+  const toggleFilter = (id: FilterId) =>
+    setFilters((current) => (current.includes(id) ? current.filter((f) => f !== id) : [...current, id]))
 
-  const clearFilters = () => {
-    setQuery('')
-    setVibeSlugs([])
-    setCategoryId('all')
-  }
-
-  const trimmedQuery = query.trim()
-  const listTitle = trimmedQuery
+  const labelledIds = useMemo(() => {
+    const labelled: Location[] = []
+    for (const spot of results) {
+      if (labelled.length === LABELLED_PINS) break
+      if (labelled.every((other) => distanceMeters(other, spot) > LABEL_SPACING_M)) labelled.push(spot)
+    }
+    return new Set(labelled.map((spot) => spot.id))
+  }, [results])
+  const title = trimmedQuery
     ? `${results.length} ${results.length === 1 ? 'spot matches' : 'spots match'} “${trimmedQuery}”`
-    : categoryId === 'all'
-      ? `${results.length} spots`
-      : `${results.length} ${categoryLabel.toLowerCase()} spots`
+    : `${intent.listTitle} ${userLocation ? 'near you' : 'on campus'}`
 
   return (
-    <div className="relative h-dvh w-screen overflow-hidden bg-neutral-900">
-      <Map
+    <div className="absolute inset-0 overflow-hidden bg-[#E9EEF1]">
+      <MapboxMap
         ref={mapRef}
         mapboxAccessToken={MAPBOX_TOKEN}
         initialViewState={{ longitude: -89.4, latitude: 43.0745, zoom: 14.5 }}
-        mapStyle="mapbox://styles/mapbox/dark-v11"
+        mapStyle="mapbox://styles/mapbox/light-v11"
         onDragStart={() => setSnap('peek')}
-        // Mapbox loads async, so frame the initial spots here too in case data arrived first.
-        onLoad={() => fitToSpots(mapRef.current, results, snap, false)}
+        onLoad={() => {
+          if (mapRef.current) applyBrandColors(mapRef.current)
+          setMapLoaded(true)
+        }}
       >
-        {pinnedLocations.map((location) => {
-          const isSelected = location.id === selectedId
+        {results.map((spot) => {
+          const labelled = labelledIds.has(spot.id)
+          const stale = getFreshnessLevel(spot.lastUpdated, now) === 'stale'
+          const level = getCrowdLevel(spot.busyScore)
+          const color = stale ? STALE_COLOR : crowdColor[level]
+          const status = stale ? 'No recent update' : crowdLabel[level]
           return (
             <Marker
-              key={location.id}
-              longitude={location.lng}
-              latitude={location.lat}
-              style={{ zIndex: isSelected ? 1 : 0 }}
+              key={spot.id}
+              longitude={spot.lng}
+              latitude={spot.lat}
+              anchor={labelled ? 'bottom' : 'center'}
+              style={{ zIndex: labelled ? 2 : 1 }}
             >
-              <LocationPin
-                location={location}
-                selected={isSelected}
-                onClick={() => selectLocation(location)}
-              />
+              {labelled ? (
+                <button
+                  type="button"
+                  onClick={() => openSpot(spot)}
+                  className="flex flex-col items-center"
+                  aria-label={`${spot.name}: ${status}`}
+                >
+                  <span
+                    style={{ background: color, color: stale ? '#0F1E26' : crowdInk[level] }}
+                    className="whitespace-nowrap rounded-[10px] px-2.5 py-1.5 font-sans text-[13px] font-bold shadow-[0_2px_8px_rgba(15,30,38,0.25)]"
+                  >
+                    {shortName(spot.name)} · {stale ? '?' : crowdLabel[level]}
+                  </span>
+                  <span className="h-2 w-[3px] bg-ink" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => openSpot(spot)}
+                  aria-label={`${spot.name}: ${status}`}
+                  style={{ background: color }}
+                  className="block h-[18px] w-[18px] rounded-full border-[3px] border-white shadow-[0_1px_4px_rgba(15,30,38,0.3)]"
+                />
+              )}
             </Marker>
           )
         })}
-      </Map>
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3">
-        <div className="pointer-events-auto mx-auto flex max-w-md flex-col gap-2">
-          <SearchBar
+        {userLocation && (
+          <Marker longitude={userLocation.lng} latitude={userLocation.lat} style={{ zIndex: 3 }}>
+            <span aria-label="You are here" className="flex h-10 w-10 items-center justify-center rounded-full bg-lake/20">
+              <span className="h-[22px] w-[22px] rounded-full border-[3px] border-white bg-lake" />
+            </span>
+          </Marker>
+        )}
+      </MapboxMap>
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 px-4 pt-4">
+        <label className="pointer-events-auto flex h-[50px] items-center gap-3 rounded-2xl bg-white px-4 shadow-[0_2px_10px_rgba(15,30,38,0.14)]">
+          <Search className="h-5 w-5 shrink-0 text-mute" />
+          <input
             value={query}
-            onChange={setQuery}
-            onFocus={() => {
-              setSelectedId(null)
-              setSnap('half')
-            }}
+            onChange={(event) => setQuery(event.target.value)}
+            onFocus={() => setSnap('half')}
+            placeholder="Search a spot, building or café"
+            aria-label="Search a spot, building or café"
+            className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-mute"
           />
-          <FilterBar
-            categoryId={categoryId}
-            onCategoryChange={changeCategory}
-            vibeTags={vibeTags}
-            selectedVibeSlugs={vibeSlugs}
-            onToggleVibe={toggleVibe}
-          />
+          {query && (
+            <button type="button" aria-label="Clear search" onClick={() => setQuery('')}>
+              <X className="h-5 w-5 text-mute" />
+            </button>
+          )}
+        </label>
+
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/welcome')}
+            aria-label={`Looking for ${intent.label}. Change`}
+            className="pointer-events-auto h-[34px] rounded-full bg-lake px-3.5 text-[13px] font-bold text-white shadow-[0_1px_5px_rgba(15,30,38,0.14)]"
+          >
+            {intent.label}
+          </button>
+          {filterChips.map(({ id, label }) => {
+            const active = filters.includes(id)
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleFilter(id)}
+                className={`pointer-events-auto h-[34px] rounded-full px-3.5 text-[13px] font-bold shadow-[0_1px_5px_rgba(15,30,38,0.14)] ${
+                  active ? 'bg-lake text-white' : 'bg-white text-ink'
+                }`}
+              >
+                {label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -170,65 +251,82 @@ export function ExploreView() {
         snap={snap}
         onSnapChange={setSnap}
         header={
-          !selectedLocation && (
-            <div className="px-4 pb-2">
-              <h2 className="text-sm font-semibold text-neutral-50">{listTitle}</h2>
-              <p className="text-xs text-neutral-500">
-                {trimmedQuery ? 'Searching all categories' : 'Least busy first'}
-              </p>
-            </div>
-          )
+          <div className="flex items-center justify-between gap-3 px-4 pb-3">
+            <h2 className="font-display text-[20px] font-bold leading-tight tracking-tight">{title}</h2>
+            <span className="flex shrink-0 items-center gap-1.5 text-[13px] text-mute">
+              <span className="h-2 w-2 rounded-full bg-terrace" />
+              Live
+            </span>
+          </div>
         }
       >
-        {selectedLocation ? (
-          <LocationCard
-            location={selectedLocation}
-            vibeTags={vibeTags}
-            onClose={() => setSelectedId(null)}
-          />
-        ) : (
-          <div className="flex flex-col gap-2 px-4 pb-6">
-            {results.map((location) => (
-              <LocationListItem
-                key={location.id}
-                location={location}
-                onClick={() => selectLocation(location)}
-              />
-            ))}
-
-            {results.length === 0 && placeResults.length === 0 && (
-              <div className="py-4 text-center">
-                <p className="text-sm text-neutral-400">No spots match these filters.</p>
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="mt-2 text-sm font-medium text-emerald-400 hover:text-emerald-300"
+        <div className="flex flex-col gap-3 px-4 pb-6">
+          {results.map((spot) => {
+            const stale = getFreshnessLevel(spot.lastUpdated, now) === 'stale'
+            const level = getCrowdLevel(spot.busyScore)
+            const outlets = outletSummary(spot)
+            const details = stale
+              ? ['No recent check-in', outlets]
+              : [crowdLabel[level], `${openSeatsLabel(spot).toLowerCase()} seats`, outlets]
+            const meta = [
+              userLocation ? `${walkMinutes(userLocation, spot)} min walk` : null,
+              `updated ${agoLabel(spot.lastUpdated, now)}`,
+            ]
+            return (
+              <button
+                key={spot.id}
+                type="button"
+                onClick={() => openSpot(spot)}
+                className="flex w-full items-center gap-3 rounded-2xl bg-paper p-2.5 text-left"
+              >
+                <span
+                  style={{ background: stale ? '#DDE3E7' : crowdColor[level] }}
+                  className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[14px]"
                 >
-                  Clear filters
-                </button>
-              </div>
-            )}
+                  <CrowdBars level={stale ? 'quiet' : level} size={14} color={stale ? '#56666F' : crowdInk[level]} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate font-display text-[16px] font-bold">{spot.name.replace(': ', ' · ')}</span>
+                  <span className="block truncate text-[13px] text-mute">{details.filter(Boolean).join(' · ')}</span>
+                  <span className="block truncate text-[13px] text-mute">{meta.filter(Boolean).join(' · ')}</span>
+                </span>
+              </button>
+            )
+          })}
 
-            {placeResults.length > 0 && (
-              <>
-                <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                  Addresses
-                </h3>
-                {placeResults.map((place) => (
-                  <button
-                    key={`${place.lat},${place.lng}`}
-                    type="button"
-                    onClick={() => selectPlace(place)}
-                    className="flex w-full items-center gap-3 rounded-xl border border-neutral-800 px-4 py-3 text-left hover:bg-neutral-800"
-                  >
-                    <MapPin className="h-4 w-4 shrink-0 text-neutral-500" />
-                    <span className="min-w-0 truncate text-sm text-neutral-300">{place.label}</span>
-                  </button>
-                ))}
-              </>
-            )}
-          </div>
-        )}
+          {results.length === 0 && placeResults.length === 0 && (
+            <div className="py-4 text-center">
+              <p className="text-sm text-mute">No spots match right now.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('')
+                  setFilters([])
+                }}
+                className="mt-2 text-sm font-bold text-lake"
+              >
+                Clear search and filters
+              </button>
+            </div>
+          )}
+
+          {placeResults.length > 0 && (
+            <>
+              <h3 className="mt-2 text-xs font-bold uppercase tracking-wider text-mute">Addresses</h3>
+              {placeResults.map((place) => (
+                <button
+                  key={`${place.lat},${place.lng}`}
+                  type="button"
+                  onClick={() => selectPlace(place)}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-line px-4 py-3 text-left"
+                >
+                  <MapPin className="h-4 w-4 shrink-0 text-mute" />
+                  <span className="min-w-0 truncate text-sm">{place.label}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
       </BottomSheet>
     </div>
   )

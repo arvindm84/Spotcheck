@@ -1,9 +1,78 @@
 @import "tailwindcss";
 @import "mapbox-gl/dist/mapbox-gl.css";
 
+/* Brand v0.1 (see the brand board): Lake / Terrace / Ink / Shallows, plus the four-step crowd scale. */
+@theme {
+  --color-lake: #0f5c7a;
+  --color-terrace: #f26b2a;
+  --color-ink: #0f1e26;
+  --color-shallows: #dceff5;
+  --color-paper: #f5f7f9;
+  --color-mute: #56666f;
+  --color-line: #dde3e7;
+  --color-crowd-quiet: #b9e2ef;
+  --color-crowd-moderate: #5fb0c9;
+  --color-crowd-busy: #e8792b;
+  --color-crowd-packed: #a8390b;
+
+  --font-display: "Bricolage Grotesque", "DM Sans", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #e4e9ec;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
 /* Keep the Mapbox logo and attribution visible above the bottom sheet (BottomSheet sets --sheet-height). */
 .mapboxgl-ctrl-bottom-left,
 .mapboxgl-ctrl-bottom-right {
   bottom: var(--sheet-height, 0px);
   transition: bottom 300ms ease-out;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+.animate-sheet-up {
+  animation: sheet-up 260ms ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.animate-fade-in {
+  animation: fade-in 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-sheet-up,
+  .animate-fade-in {
+    animation: none;
+  }
 }

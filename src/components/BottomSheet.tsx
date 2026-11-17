@@ -97,7 +97,7 @@ export function BottomSheet({ snap, onSnapChange, header, children }: BottomShee
     <div
       ref={sheetRef}
       style={{ height }}
-      className={`absolute inset-x-0 bottom-0 z-20 mx-auto flex w-full max-w-md flex-col rounded-t-2xl border border-b-0 border-neutral-700 bg-neutral-900/95 shadow-[0_-8px_24px_rgba(0,0,0,0.4)] backdrop-blur ${
+      className={`absolute inset-x-0 bottom-0 z-20 mx-auto flex w-full flex-col rounded-t-[28px] bg-white shadow-[0_-6px_24px_rgba(15,30,38,0.12)] ${
         dragHeight === null ? 'transition-[height] duration-300 ease-out' : ''
       }`}
     >
@@ -112,9 +112,9 @@ export function BottomSheet({ snap, onSnapChange, header, children }: BottomShee
           type="button"
           onClick={cycleSnap}
           aria-label={snap === 'full' ? 'Collapse sheet' : 'Expand sheet'}
-          className="flex w-full justify-center pb-1 pt-2.5"
+          className="flex w-full justify-center pb-2 pt-3"
         >
-          <span className="h-1 w-10 rounded-full bg-neutral-600" />
+          <span className="h-1 w-10 rounded-full bg-line" />
         </button>
         {header}
       </div>
