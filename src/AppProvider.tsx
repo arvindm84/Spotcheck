@@ -89,6 +89,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCheckIn({ location: location ?? null })
   }, [])
 
+  const closeCheckIn = useCallback(() => setCheckIn(null), [])
+
   const showToast = useCallback((message: string) => {
     setToast(message)
     window.clearTimeout(toastTimer.current)
@@ -133,7 +135,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider value={state}>
       {children}
-      {checkIn && <CheckInSheet initialLocation={checkIn.location} onClose={() => setCheckIn(null)} />}
+      {checkIn && <CheckInSheet initialLocation={checkIn.location} onClose={closeCheckIn} />}
       {toast && (
         <div
           role="status"

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronLeft } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+
 import { useApp } from '../lib/appContext'
+import { useGoBack } from '../lib/useGoBack'
 import { crowdColor, crowdInk, crowdLabel, getCrowdLevel, type CrowdLevel } from '../lib/crowd'
 import { getPromotion, getSpotStats, postPromotion } from '../lib/data'
 
@@ -23,7 +24,7 @@ const plans = [
 
 export function BusinessView() {
   const { locations, openCheckIn, showToast } = useApp()
-  const navigate = useNavigate()
+  const goBack = useGoBack()
   const businesses = useMemo(
     () =>
       locations
@@ -56,7 +57,7 @@ export function BusinessView() {
       <button
         type="button"
         aria-label="Back"
-        onClick={() => navigate(-1)}
+        onClick={goBack}
         className="flex h-11 w-11 items-center justify-center rounded-full bg-white"
       >
         <ChevronLeft className="h-6 w-6" />

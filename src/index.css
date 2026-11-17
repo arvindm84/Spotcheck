@@ -52,27 +52,101 @@ button {
   display: none;
 }
 
-@keyframes sheet-up {
+/* Motion. Exits use `both` so a leaving screen stays where it ended until it's removed. */
+:root {
+  --ease-out: cubic-bezier(0.22, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes slide-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes slide-in-up {
   from {
     transform: translateY(100%);
   }
 }
-.animate-sheet-up {
-  animation: sheet-up 260ms ease-out;
+@keyframes slide-out-down {
+  to {
+    transform: translateY(100%);
+  }
 }
-
 @keyframes fade-in {
   from {
     opacity: 0;
   }
 }
-.animate-fade-in {
-  animation: fade-in 200ms ease-out;
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes hold {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
+/* Full screens (spot detail, business, onboarding). */
+.animate-push-in {
+  animation: slide-in-right 320ms var(--ease-out) both;
+  box-shadow: -10px 0 30px rgba(15, 30, 38, 0.14);
+}
+.animate-push-out {
+  animation: slide-out-right 260ms var(--ease-in) both;
+  box-shadow: -10px 0 30px rgba(15, 30, 38, 0.14);
+}
+.animate-screen-in {
+  animation: fade-in 200ms ease-out both;
+}
+.animate-screen-out {
+  animation: fade-out 220ms ease-in both;
+}
+
+/* Tab screens (Events, You). */
+.animate-tab-in {
+  animation: rise-in 220ms var(--ease-out) both;
+}
+.animate-tab-out {
+  animation: fade-out 160ms ease-in both;
+}
+.animate-hold {
+  animation: hold 220ms linear both;
+}
+
+/* Check-in sheet and toast. */
+.animate-sheet-up {
+  animation: slide-in-up 300ms var(--ease-out) both;
+}
+.animate-sheet-down {
+  animation: slide-out-down 220ms var(--ease-in) both;
+}
+.animate-fade-in {
+  animation: fade-in 200ms ease-out both;
+}
+.animate-fade-out {
+  animation: fade-out 220ms ease-in both;
+}
+
+/* Keep the animations (their end events remove leaving screens) but make them instant. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-sheet-up,
-  .animate-fade-in {
-    animation: none;
+  [class*="animate-"] {
+    animation-duration: 1ms !important;
   }
 }

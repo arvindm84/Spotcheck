@@ -3,6 +3,7 @@ import { Armchair, AudioLines, Bookmark, ChevronLeft, Plug, type LucideIcon } fr
 import { useNavigate, useParams } from 'react-router-dom'
 import { CrowdBars } from '../components/CrowdBars'
 import { useApp } from '../lib/appContext'
+import { useGoBack } from '../lib/useGoBack'
 import {
   agoLabel,
   categoryLabel,
@@ -44,6 +45,7 @@ function Stat({ Icon, label, value }: { Icon: LucideIcon; label: string; value: 
 export function SpotDetailView() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const goBack = useGoBack()
   const { locations, vibeTags, loaded, savedSpotIds, toggleSaved, openCheckIn, now } = useApp()
   const location = locations.find((spot) => spot.id === id)
   const [loadedCheckIns, setLoadedCheckIns] = useState<{ key: string; checkIns: CheckIn[] } | null>(null)
@@ -117,7 +119,7 @@ export function SpotDetailView() {
           <button
             type="button"
             aria-label="Back"
-            onClick={() => navigate(-1)}
+            onClick={goBack}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-white"
           >
             <ChevronLeft className="h-6 w-6" />

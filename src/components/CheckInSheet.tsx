@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
 import { useApp } from '../lib/appContext'
 import {
@@ -58,6 +58,15 @@ export function CheckInSheet({ initialLocation, onClose }: CheckInSheetProps) {
   const [noise, setNoise] = useState<NoiseLevel | null>(null)
   const [outlets, setOutlets] = useState<OutletLevel | null>(null)
   const [posting, setPosting] = useState(false)
+  // Plays the exit animation; its end calls onClose.
+  const [closing, setClosing] = useState(false)
+  const close = () => setClosing(true)
+  // In case the exit animation never ends (e.g. the tab is hidden).
+  useEffect(() => {
+    if (!closing) return
+    const timer = window.setTimeout(onClose, 500)
+    return () => window.clearTimeout(timer)
+  }, [closing, onClose])
 
   // Nearest first when we know where the visitor is.
   const choices = useMemo(() => {
@@ -86,18 +95,23 @@ export function CheckInSheet({ initialLocation, onClose }: CheckInSheetProps) {
           ? 'You updated this spot a few minutes ago. Try again in 10 minutes.'
           : 'Saved on this device — the server couldn’t be reached.',
     )
-    onClose()
+    close()
   }
 
   const name = location ? splitName(location.name) : null
 
   return (
-    <div className="animate-fade-in absolute inset-0 z-50 flex flex-col justify-end bg-ink">
-      <button type="button" aria-label="Close" onClick={onClose} className="min-h-16 flex-1" />
+    <div
+      className={`absolute inset-0 z-50 flex flex-col justify-end bg-ink ${closing ? 'animate-fade-out pointer-events-none' : 'animate-fade-in'}`}
+    >
+      <button type="button" aria-label="Close" onClick={close} className="min-h-16 flex-1" />
       <div
         role="dialog"
         aria-label="Check in"
-        className="animate-sheet-up flex max-h-[88%] flex-col rounded-t-[28px] bg-white"
+        className={`flex max-h-[88%] flex-col rounded-t-[28px] bg-white ${closing ? 'animate-sheet-down' : 'animate-sheet-up'}`}
+        onAnimationEnd={(event) => {
+          if (closing && event.target === event.currentTarget) onClose()
+        }}
       >
         <div className="flex justify-center pb-2 pt-3">
           <span className="h-1 w-10 rounded-full bg-line" />
