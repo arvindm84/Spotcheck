@@ -45,7 +45,10 @@ function App() {
   const nextTabLocation = isTabScreen ? location : isFullScreen ? tabLocation : null
   if (nextTabLocation?.key !== tabLocation?.key) setTabLocation(nextTabLocation)
 
-  if (!intent && pathname !== '/welcome') return <Navigate to="/welcome" replace />
+  // Every visit starts on onboarding; a shared link to a spot still opens that spot.
+  if (!intent && pathname !== '/welcome' && !pathname.startsWith('/spot/')) {
+    return <Navigate to="/welcome" replace />
+  }
   if (!KNOWN_PATHS.test(pathname)) return <Navigate to="/" replace />
 
   return (

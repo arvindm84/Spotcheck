@@ -390,15 +390,3 @@ export function postPromotion(locationId: string, title: string): Promotion {
   writeStore('promotion', promotion)
   return promotion
 }
-
-// ---------------------------------------------------------------------------------------------
-// Onboarding choice (on this device)
-// ---------------------------------------------------------------------------------------------
-
-export function getStoredIntent(): string | null {
-  return readStore<string | null>('intent', null)
-}
-
-export function storeIntent(intent: string) {
-  writeStore('intent', intent)
-}

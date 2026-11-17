@@ -5,23 +5,16 @@ import {
   getDataSource,
   getLocations,
   getSavedSpotIds,
-  getStoredIntent,
   getVibeTags,
   setSpotSaved,
-  storeIntent,
   type DataSource,
 } from './lib/data'
 import { isNearCampus, type LatLng } from './lib/geo'
-import { intents, type IntentId } from './lib/intent'
+import type { IntentId } from './lib/intent'
 import type { Location, VibeTag } from './types/location'
 
 const REFRESH_MS = 60_000
 const TOAST_MS = 3200
-
-function initialIntent(): IntentId | null {
-  const stored = getStoredIntent()
-  return intents.some((intent) => intent.id === stored) ? (stored as IntentId) : null
-}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [locations, setLocations] = useState<Location[]>([])
@@ -29,7 +22,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const [dataSource, setDataSource] = useState<DataSource>('demo')
-  const [intent, setIntentState] = useState<IntentId | null>(initialIntent)
+  // Kept in memory only, so every visit starts on the onboarding screen.
+  const [intent, setIntent] = useState<IntentId | null>(null)
   const [savedSpotIds, setSavedSpotIds] = useState<string[]>(getSavedSpotIds)
   const [userLocation, setUserLocation] = useState<LatLng | null>(null)
   const [checkIn, setCheckIn] = useState<{ location: Location | null } | null>(null)
@@ -75,11 +69,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {})
   }, [requestLocation])
-
-  const setIntent = useCallback((next: IntentId) => {
-    storeIntent(next)
-    setIntentState(next)
-  }, [])
 
   const toggleSaved = useCallback((locationId: string) => {
     setSavedSpotIds((current) => setSpotSaved(locationId, !current.includes(locationId)))
