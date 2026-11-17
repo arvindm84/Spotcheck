@@ -15,7 +15,7 @@ SpotCheck: a mobile-first web app showing real-time-ish "how busy is it" and vib
 
 There is no test suite configured yet (no test script, no test runner installed).
 
-Requires `VITE_MAPBOX_TOKEN` set in `.env` (see `.env.example`) for the map to render tiles locally. `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are reserved for Sprint 4 and currently unused by any code.
+Requires `VITE_MAPBOX_TOKEN` set in `.env` (see `.env.example`) for the map to render tiles locally. `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` connect the live backend; without them `data.ts` serves mock data. The design mockups are in `docs/design/`. The live site is `dist/` pushed to the `gh-pages` branch of arvindm84/Spotcheck.
 
 ## Architecture
 

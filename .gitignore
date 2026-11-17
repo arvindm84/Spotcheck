@@ -1,4 +1,4 @@
-# Logs
+﻿# Logs
 logs
 *.log
 npm-debug.log*
@@ -13,7 +13,6 @@ dist-ssr
 *.local
 .env
 .env.local
-.env.example
 .claudeignore
 spotcheck_PRD.md
 spotcheck_PRD_HL.md
@@ -31,3 +30,9 @@ spotcheck_PRD_HL.md
 
 # Local mobile build output
 mobile/build/
+
+# Local Claude Code / editor tooling
+.claude/
+
+# Mockup PNGs (same content as docs/design/SpotCheck-App-Design.pdf)
+docs/design/*.zip
